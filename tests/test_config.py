@@ -11,10 +11,12 @@ def test_config_defaults():
     assert config.llm_timeout == 120
     assert config.llm_concurrency == 3
     assert config.lightrag_url == "http://localhost:8080"
+    assert config.lightrag_api_key == ""
     assert config.rag_timeout == 60
     assert config.database_url == ""
     assert config.admin_api_key == ""
     assert config.max_file_size_kb == 200
+    assert config.host == "0.0.0.0"
     assert config.port == 8004
 
 
