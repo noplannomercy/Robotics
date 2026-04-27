@@ -54,29 +54,20 @@ def test_check3_pass_enum_with_table_col():
     assert result.passed is True
 
 
-def test_check3_fail_standalone_enum():
+def test_check3_removed_passes():
     raw = "STATUS column"
     reverse = "상태를 'REJECTED'로 변경한다."
     result = validate(raw, reverse)
-    assert result.passed is False
-    assert "check 3" in result.feedback
+    assert result.passed is True  # check 3 제거됨
 
 
-# --- check 4: no standalone column names ---
+# --- check 4 제거됨 ---
 
-def test_check4_pass_dot_notation():
-    raw = "PROC_TEST updates STATUS column"
-    reverse = "PROC_TEST는 TBL_LOAN_APPLICATION.STATUS를 변경한다."
-    result = validate(raw, reverse)
-    assert result.passed is True
-
-
-def test_check4_fail_standalone_column():
+def test_check4_removed_passes():
     raw = "PROC_TEST updates EVAL_TYPE column"
     reverse = "PROC_TEST는 EVAL_TYPE을 변경한다."
     result = validate(raw, reverse)
-    assert result.passed is False
-    assert "check 4" in result.feedback
+    assert result.passed is True  # check 4 제거됨
 
 
 # --- feedback format ---
