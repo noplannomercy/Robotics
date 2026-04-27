@@ -141,9 +141,12 @@ class PostgresJobStore(JobStore):
         return self._row_to_job(dict(row))
 
     async def get(self, job_id: str) -> Job | None:
-        row = await self._pool.fetchrow(
-            "SELECT * FROM rdoc_job WHERE job_id = $1", job_id
-        )
+        try:
+            row = await self._pool.fetchrow(
+                "SELECT * FROM rdoc_job WHERE job_id = $1", job_id
+            )
+        except Exception:
+            return None
         return self._row_to_job(dict(row)) if row else None
 
     async def get_by_hash(self, source_hash: str) -> Job | None:
