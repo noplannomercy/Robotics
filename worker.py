@@ -27,11 +27,14 @@ async def _safe_process(
             raw=raw,
             asset_type=job.asset_type,
             job_id=job.id,
+            file_name=job.file_name,
             callback_url=job.callback_url,
             store=store,
             llm=llm,
             rag=rag,
             prompt_store=prompt_store,
+            callback_field_map=config.callback_field_map,
+            callback_keep_unmapped=config.callback_keep_unmapped,
         )
     except Exception:
         logger.exception("Unhandled error in job %s", job.id)

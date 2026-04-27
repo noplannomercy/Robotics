@@ -74,6 +74,7 @@ async def test_full_flow_success(e2e_app):
             raw=source,
             asset_type="plsql",
             job_id=job_id,
+            file_name="test.sql",
             callback_url=None,
             store=store,
             llm=llm_mock,

@@ -1,5 +1,6 @@
 # callback.py
 import asyncio
+import json
 import logging
 from typing import Sequence
 
@@ -11,16 +12,38 @@ RETRIES = 3
 DELAYS = [1, 2, 4]
 
 
+def _apply_field_map(payload: dict, field_map_json: str, keep_unmapped: bool) -> dict:
+    """Forge CALLBACK_FIELD_MAP과 동일 로직: 필드명 rename + 불필요 필드 제거."""
+    if not field_map_json:
+        return payload
+    try:
+        rename_map: dict[str, str] = json.loads(field_map_json)
+    except json.JSONDecodeError:
+        logger.error("CALLBACK_FIELD_MAP JSON 파싱 실패: %s", field_map_json)
+        return payload
+    result: dict = {}
+    for k, v in payload.items():
+        new_key = rename_map.get(k, k)
+        if not keep_unmapped and k not in rename_map:
+            continue
+        result[new_key] = v
+    return result
+
+
 async def send_callback(
     url: str | None,
     payload: dict,
     api_key: str | None = None,
     transport: httpx.AsyncBaseTransport | None = None,
     delays: Sequence[float] | None = None,
+    field_map: str = "",
+    keep_unmapped: bool = True,
 ) -> None:
-    """ingestion-router로 완료 콜백 전송. 실패 시 3회 retry, 최종 실패는 로그만."""
+    """완료 콜백 전송. 실패 시 3회 retry, 최종 실패는 로그만."""
     if not url:
         return
+
+    payload = _apply_field_map(payload, field_map, keep_unmapped)
 
     retry_delays = delays if delays is not None else DELAYS
 

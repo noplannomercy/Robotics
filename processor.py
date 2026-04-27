@@ -32,11 +32,14 @@ async def to_reverse_doc(
     raw: bytes,
     asset_type: str,
     job_id: str,
+    file_name: str,
     callback_url: str | None,
     store: JobStore,
     llm: LLMClient,
     rag: RAGClient,
     prompt_store,
+    callback_field_map: str = "",
+    callback_keep_unmapped: bool = True,
 ) -> None:
     """역문서화 파이프라인. 결과를 store에 저장하고 callback 전송."""
     await store.update_status(job_id, JobStatus.PROCESSING)
@@ -82,7 +85,9 @@ async def to_reverse_doc(
             await store.save_error(job_id, f"검증 실패 (3회): {last_feedback}")
             await send_callback(
                 url=callback_url,
-                payload={"forge_job_id": job_id, "content": "", "forge_status": "failed", "forge_error": last_feedback},
+                payload={"rdoc_job_id": job_id, "file_name": file_name, "content": "", "status": "failed", "error": last_feedback},
+                field_map=callback_field_map,
+                keep_unmapped=callback_keep_unmapped,
             )
             return
 
@@ -92,7 +97,9 @@ async def to_reverse_doc(
         # 5. Callback 전송
         await send_callback(
             url=callback_url,
-            payload={"forge_job_id": job_id, "content": result, "forge_status": "completed", "forge_error": None},
+            payload={"rdoc_job_id": job_id, "file_name": file_name, "content": result, "status": "completed", "error": None},
+            field_map=callback_field_map,
+            keep_unmapped=callback_keep_unmapped,
         )
 
     except Exception as e:
@@ -100,5 +107,7 @@ async def to_reverse_doc(
         await store.save_error(job_id, str(e))
         await send_callback(
             url=callback_url,
-            payload={"forge_job_id": job_id, "content": "", "forge_status": "failed", "forge_error": str(e)},
+            payload={"rdoc_job_id": job_id, "file_name": file_name, "content": "", "status": "failed", "error": str(e)},
+            field_map=callback_field_map,
+            keep_unmapped=callback_keep_unmapped,
         )

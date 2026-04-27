@@ -21,4 +21,9 @@ class Config(BaseSettings):
     host: str = "0.0.0.0"
     port: int = 8004
 
+    # Callback payload 필드명 rename (Forge CALLBACK_FIELD_MAP과 동일)
+    # 예: '{"content":"text","file_name":"file_source"}' → LightRAG /documents/text 형식
+    callback_field_map: str = ""
+    callback_keep_unmapped: bool = True
+
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
