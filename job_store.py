@@ -36,6 +36,9 @@ class JobStore(ABC):
     @abstractmethod
     async def list_jobs(self, page: int, size: int, status: str | None, asset_type: str | None) -> tuple[list[dict], int]: ...
 
+    @abstractmethod
+    async def delete(self, job_id: str) -> None: ...
+
 
 class InMemoryJobStore(JobStore):
     def __init__(self):
@@ -103,6 +106,9 @@ class InMemoryJobStore(JobStore):
         start = (page - 1) * size
         sliced = jobs[start:start + size]
         return [j.model_dump() for j in sliced], total
+
+    async def delete(self, job_id: str) -> None:
+        self._jobs.pop(job_id, None)
 
 
 class PostgresJobStore(JobStore):
@@ -204,6 +210,9 @@ class PostgresJobStore(JobStore):
             *params, size, offset,
         )
         return [dict(r) for r in rows], total
+
+    async def delete(self, job_id: str) -> None:
+        await self._pool.execute("DELETE FROM rdoc_job WHERE job_id = $1", job_id)
 
 
 class PromptStore:

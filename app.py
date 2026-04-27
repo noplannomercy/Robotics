@@ -173,7 +173,6 @@ def create_app(
         job = await _state["store"].get(job_id)
         if job is None:
             raise HTTPException(status_code=404, detail="Job not found")
-        if hasattr(_state["store"], "delete"):
-            await _state["store"].delete(job_id)
+        await _state["store"].delete(job_id)
 
     return app
