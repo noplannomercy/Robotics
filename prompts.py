@@ -10,27 +10,36 @@ PLSQL_PROMPT = """당신은 Oracle PL/SQL 전문가이자 역문서 생성기다
    올바름: "PROC_CREDIT_EVALUATION은 TBL_LOAN_APPLICATION.STATUS를 변경한다."
    금지: "신용평가 프로시저(PROC_CREDIT_EVALUATION)가..."
 
-2. **컬럼은 반드시 점 표기** — TBL_NAME.COLUMN_NAME 형태.
-   금지: EVAL_TYPE 단독 등장.
+2. **컬럼은 반드시 점 표기** — TBL_NAME.COLUMN_NAME 형태만 허용. 소스 SQL에서 컬럼이 단독으로 사용되더라도(예: WHERE APPLICATION_ID = ..., SET APPROVE_DATE = SYSDATE) 역문서에서는 반드시 TBL.COL 형태로.
+   올바름: TBL_LOAN_APPLICATION.APPLICATION_ID, TBL_LOAN_APPLICATION.APPROVE_DATE
+   금지: APPLICATION_ID 단독, APPROVE_DATE 단독, REJECT_REASON 단독.
 
-3. **enum 값은 TBL.COL='val' 형태 강제** — 단독 'REJECTED' 금지.
-   올바름: TBL_LOAN_APPLICATION.STATUS = 'APPROVED'
-   금지: 'APPROVED' 단독 등장.
+3. **enum 값은 반드시 TBL.COL='val' 형태** — INSERT/UPDATE에서 컬럼에 저장되는 따옴표 붙은 값을 단독으로 쓰는 것은 절대 금지. INSERT 컬럼 순서를 보고 어느 컬럼의 값인지 파악하라.
+   올바름: TBL_APPROVAL_HISTORY.EVAL_TYPE='CREDIT', TBL_LOAN_APPLICATION.STATUS='APPROVED'
+   금지: 'CREDIT' 단독, 'FINAL' 단독, 'APPROVED' 단독.
 
-4. **거절 사유 코드는 unquoted 단독 허용** — CREDIT_LOW, LTV_EXCEEDED 등.
+4. **거절/알림 코드는 반드시 unquoted 단독** — PROC_*/FUNC_* 호출 인자로 전달되는 문자열(예: PROC_NOTIFY_APPLICANT(..., 'REJECT_CREDIT'))은 역문서에서 따옴표 없이 기술. 절대로 따옴표 붙이지 말 것.
+   올바름: REJECT_CREDIT 사유로 처리, LTV_EXCEEDED 조건으로 거절
+   금지: 'REJECT_CREDIT' 단독, 'REJECT_LIMIT' 단독.
 
-5. **업무 정책 canonical 명 사용** — "대출 한도 산정 정책", "신용평가 정책" 등 정확히.
+5. **소스의 모든 식별자 포함 필수** — TBL_*, PROC_*, FUNC_*, PKG_*, SEQ_*, FK_*, PK_* 접두사로 시작하는 식별자가 소스에 등장하면 역문서에 반드시 언급. SEQ_*(시퀀스)와 FK_*(외래키) 누락 금지.
+
+6. **업무 정책 canonical 명 사용** — "대출 한도 산정 정책", "신용평가 정책" 등 정확히.
    금지: "신용평가 기준", "한도 정책" 등 동의어.
 
 ## 출력 형식
 
 패키지 설명 한 단락 후, PROC/FUNC 단위로 ## 헤더 절을 구성한다.
 각 절은 해당 프로시저/함수의 역할, 처리 흐름, 테이블/컬럼 조작, 거절 분기를 담는다.
+소스에 SEQ_* 또는 FK_* 식별자가 있으면 해당 절 또는 별도 절에 반드시 기술한다.
 
 예시:
 ## PROC_CREDIT_EVALUATION
 
-PROC_CREDIT_EVALUATION은 신용평가 정책에 따라 신청 건의 신용 적격성을 판정한다. ...
+PROC_CREDIT_EVALUATION은 신용평가 정책에 따라 신청 건의 신용 적격성을 판정한다.
+TBL_LOAN_APPLICATION.STATUS를 'APPROVED' 또는 'REJECTED'로 갱신하며,
+SEQ_APPROVAL_HISTORY를 사용해 TBL_APPROVAL_HISTORY에 이력을 기록한다.
+거절 사유는 LTV_EXCEEDED, CREDIT_LOW 등의 코드로 기록된다.
 """
 
 DICTIONARY_PROMPT = """당신은 Oracle 데이터 딕셔너리 전문가이자 역문서 생성기다.

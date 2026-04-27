@@ -3,8 +3,12 @@ import pytest
 from config import Config
 
 
-def test_config_defaults():
-    config = Config()
+def test_config_defaults(monkeypatch):
+    for key in ["LLM_URL", "LLM_MODEL", "LLM_API_KEY", "LLM_TIMEOUT", "LLM_CONCURRENCY",
+                "LIGHTRAG_URL", "LIGHTRAG_API_KEY", "RAG_TIMEOUT",
+                "DATABASE_URL", "ADMIN_API_KEY", "MAX_FILE_SIZE_KB", "HOST", "PORT"]:
+        monkeypatch.delenv(key, raising=False)
+    config = Config(_env_file=None)
     assert config.llm_url == "http://localhost:11434/v1/chat/completions"
     assert config.llm_model == "qwen2.5:14b"
     assert config.llm_api_key == ""

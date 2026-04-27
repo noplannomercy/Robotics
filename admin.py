@@ -1,5 +1,5 @@
 # admin.py
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Body, Depends, HTTPException, Query
 
 
 def create_admin_router(get_state, auth_dep) -> APIRouter:
@@ -47,5 +47,12 @@ def create_admin_router(get_state, auth_dep) -> APIRouter:
         )
 
         return {"job_id": new_job.id, "status": new_job.status, "note": "재시도 job 생성됨. 소스 재업로드 필요."}
+
+    @router.put("/prompts/{asset_type}", summary="프롬프트 새 버전 등록")
+    async def update_prompt(asset_type: str, text: str = Body(..., embed=True)):
+        state = get_state()
+        prompt_store = state.prompt_store
+        result = await prompt_store.create_version(asset_type, text)
+        return {"asset_type": asset_type, "version": result["version"], "is_active": result["is_active"]}
 
     return router

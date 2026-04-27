@@ -37,10 +37,14 @@ def validate(raw: str, reverse: str) -> ValidationResult:
         failures.append(f"check 2 실패: 소문자 식별자 발견 — {', '.join(bad_case[:5])}")
 
     # check 3: enum 값 단독 등장 금지 (TBL.COL='val' 형태 강제)
-    # 두 단계: 전체 인용 값 탐지 후 = 앞에 있는 것 제외
+    # PROC_*/FUNC_*/PKG_* 호출 인자로 사용된 문자열 상수는 거절/알림 코드이므로 제외
+    proc_call_args: set[str] = set()
+    for line in raw.split('\n'):
+        if re.search(r'\b(?:PROC|FUNC|PKG)_[A-Z0-9_]+\s*\(', line, re.IGNORECASE):
+            proc_call_args.update(re.findall(r"'([A-Z][A-Z0-9_]+)'", line))
     all_quoted = re.findall(r"'([A-Z][A-Z0-9_]+)'", reverse)
     eq_preceded = re.findall(r"=\s*'([A-Z][A-Z0-9_]+)'", reverse)
-    standalone_enums = [e for e in all_quoted if e not in eq_preceded]
+    standalone_enums = [e for e in all_quoted if e not in eq_preceded and e not in proc_call_args]
     if standalone_enums:
         failures.append(
             f"check 3 실패: enum 단독 등장 — {', '.join(standalone_enums[:5])}. "
@@ -48,12 +52,15 @@ def validate(raw: str, reverse: str) -> ValidationResult:
         )
 
     # check 4: 컬럼명 단독 등장 금지 (점 표기 강제)
+    # source에서 따옴표로 등장한 값은 거절 사유 코드/상수이므로 역문서에서 단독 허용
+    source_quoted_vals = set(re.findall(r"'([A-Z][A-Z0-9_]+)'", raw))
     standalone_cols = STANDALONE_COL_RE.findall(reverse)
     non_prefixed = [
         c for c in standalone_cols
         if not re.match(r'^(?:TBL|PROC|FUNC|PKG|SEQ|FK|PK)_', c)
         and c not in rev_ids
         and not re.search(rf'\.{re.escape(c)}(?![A-Z0-9_])', reverse)
+        and c not in source_quoted_vals
     ]
     if non_prefixed:
         failures.append(
