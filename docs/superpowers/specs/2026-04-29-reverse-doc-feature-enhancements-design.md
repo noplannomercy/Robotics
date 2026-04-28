@@ -96,9 +96,9 @@ ALTER TABLE rdoc_job ADD COLUMN IF NOT EXISTS rag_mode TEXT DEFAULT 'mix';
 ```
 
 **지표 계산:**
-- `success_rate` = `completed / total * 100` (total > 0이면)
-- `avg_processing_sec` = `AVG(completed_at - started_at)` (completed job만)
-- `retry_rate` = `attempts > 1인 job 수 / total * 100`
+- `success_rate` = `completed / total * 100` (total = 0이면 0.0)
+- `avg_processing_sec` = `AVG(completed_at - started_at)` — **completed 상태이고 started_at, completed_at 모두 not None인 job만** 대상. PostgreSQL은 NULL 자동 제외, InMemoryJobStore는 명시적 필터 필수 (None 연산 시 TypeError)
+- `retry_rate` = `attempts > 1인 job 수 / total * 100` (total = 0이면 0.0)
 - `recent_failures` = 최근 5건 (failed, `completed_at DESC`)
 
 ### 구현 파일
@@ -130,14 +130,15 @@ ALTER TABLE rdoc_job ADD COLUMN IF NOT EXISTS rag_mode TEXT DEFAULT 'mix';
 - DB 연결 실패: `503 {"status": "unavailable", "reason": "db"}`
 - `DATABASE_URL` 미설정 (InMemory 모드): `200 {"status": "ok", "queue": {...}}`
 
-> `queue` 카운트는 `list_jobs()`의 status 필터 활용. DB 없을 때는 InMemoryJobStore에서 조회.
+> `queue` 카운트는 `list_jobs()` 대신 **경량 `count_by_status()` 메서드** 사용. `list_jobs()`는 페이지네이션 포함 무거운 메서드로 health endpoint에 부적합. `count_by_status()`는 `SELECT status, COUNT(*) FROM rdoc_job WHERE status IN ('queued','processing') GROUP BY status` 단일 쿼리.
 
 ### 구현 파일
+- `job_store.py` — `JobStore` ABC + `InMemoryJobStore` + `PostgresJobStore`에 `count_by_status()` 추가
 - `app.py` — `/health` 핸들러 강화
 
 ### 테스트
 - `tests/test_app.py` — DB 없는 상태(InMemory)에서 200 + queue 포함 검증
-- DB 연결 실패 시뮬레이션은 integration 영역이므로 단위 테스트 스킵 (메모 남김)
+- `tests/test_app.py` — DB 연결 실패 시 503: `pool.acquire()`를 AsyncMock으로 교체 후 `PostgresConnectionError` 발생 → 503 검증
 
 ---
 
@@ -174,14 +175,21 @@ rag_mode: str = Form("mix")
 
 ---
 
-## 구현 순서
+## 구현 순서 및 Merge 전략
 
-4개 그룹은 완전히 독립적이다. 단, **스키마 마이그레이션이 겹치는 Group B와 D**는 아래 규칙을 따른다:
+4개 그룹은 완전히 독립적이다. 단 `job_store.py`, `admin.py`를 Group A/B/D가 모두 수정하므로 **반드시 순차 merge**해야 한다.
 
-- 먼저 배포하는 그룹이 `source_bytes`와 `rag_mode` 컬럼 모두 추가 (`IF NOT EXISTS`)
-- 나중에 배포하는 그룹의 `ALTER TABLE`은 이미 컬럼이 있어도 에러 없이 통과
+**필수 규칙: 각 그룹 feature 브랜치를 master에 merge 완료한 뒤, 다음 그룹 브랜치를 master에서 새로 생성한다.**
 
-권장 순서: **A → C → D → B** (스키마 변경 없는 것 먼저, 가장 임팩트 큰 B 마지막)
+권장 순서: **A → C → D → B**
+1. `feature/group-a` → master merge
+2. `feature/group-c` (master에서 신규 생성) → master merge
+3. `feature/group-d` (master에서 신규 생성) → master merge
+4. `feature/group-b` (master에서 신규 생성) → master merge
+
+**스키마 마이그레이션 (Group B + D 공유):**
+- 먼저 배포하는 그룹(D)이 `source_bytes`와 `rag_mode` 컬럼 모두 추가 (`IF NOT EXISTS`)
+- 나중에 배포하는 그룹(B)의 `ALTER TABLE`은 이미 컬럼이 있어도 에러 없이 통과
 
 ---
 
