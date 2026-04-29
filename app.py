@@ -18,6 +18,7 @@ from worker import _safe_process
 logger = logging.getLogger(__name__)
 
 SCHEMA_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "schema.sql")
+VALID_RAG_MODES = frozenset({"local", "global", "hybrid", "mix", "naive"})
 
 
 async def _apply_schema(pool) -> None:
@@ -123,10 +124,17 @@ def create_app(
         asset_type: str = Form(...),
         callback_url: str | None = Form(None),
         requested_by: str | None = Form(None),
+        rag_mode: str = Form("mix"),
     ):
         raw = await file.read()
         if len(raw) > config.max_file_size_kb * 1024:
             raise HTTPException(status_code=413, detail=f"File exceeds {config.max_file_size_kb}KB limit")
+
+        if rag_mode not in VALID_RAG_MODES:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Invalid rag_mode: {rag_mode}. Must be one of: {', '.join(sorted(VALID_RAG_MODES))}",
+            )
 
         current_store = _state["store"]
         current_prompt_store = _state["prompt_store"]
@@ -149,6 +157,7 @@ def create_app(
             file_size=len(raw),
             callback_url=callback_url,
             requested_by=requested_by,
+            rag_mode=rag_mode,
         )
 
         asyncio.create_task(
@@ -160,6 +169,7 @@ def create_app(
                 llm=_state["llm"],
                 rag=_state["rag"],
                 prompt_store=current_prompt_store,
+                rag_mode=rag_mode,
             )
         )
 

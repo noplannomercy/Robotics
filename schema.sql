@@ -33,3 +33,7 @@ CREATE TABLE IF NOT EXISTS rdoc_prompt (
 
 CREATE UNIQUE INDEX IF NOT EXISTS idx_rdoc_prompt_active
     ON rdoc_prompt(asset_type) WHERE is_active = TRUE;
+
+-- Group B+D 공유 마이그레이션: 먼저 배포하는 Group D에서 두 컬럼 모두 추가
+ALTER TABLE rdoc_job ADD COLUMN IF NOT EXISTS source_bytes BYTEA;
+ALTER TABLE rdoc_job ADD COLUMN IF NOT EXISTS rag_mode TEXT DEFAULT 'mix';

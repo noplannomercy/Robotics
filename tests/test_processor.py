@@ -178,3 +178,37 @@ async def test_to_reverse_doc_empty_rag_context(store, prompt_store):
     updated = await store.get(job.id)
     assert updated.status == JobStatus.COMPLETED
     llm.generate.assert_called_once()  # LLM은 한 번 호출됨
+
+
+async def test_rag_mode_passed_to_query():
+    """processor가 rag.query()에 rag_mode를 전달하는지 검증."""
+    store = InMemoryJobStore()
+    job = await store.create(asset_type="plsql", file_name="t.sql", source_hash="h-mode-test")
+
+    mock_llm = AsyncMock()
+    mock_llm.generate = AsyncMock(return_value="# PROC_TEST\nTBL_LOAN_APPLICATION 처리")
+
+    mock_rag = AsyncMock()
+    mock_rag.query = AsyncMock(return_value="context")
+
+    ps = InMemoryPromptStore()
+    await ps.seed_if_empty("plsql", "테스트 프롬프트")
+
+    raw = b"PROCEDURE PROC_TEST IS BEGIN SELECT * FROM TBL_LOAN_APPLICATION; END;"
+
+    await to_reverse_doc(
+        raw=raw,
+        asset_type="plsql",
+        job_id=job.id,
+        file_name="t.sql",
+        callback_url=None,
+        store=store,
+        llm=mock_llm,
+        rag=mock_rag,
+        prompt_store=ps,
+        rag_mode="local",
+    )
+
+    mock_rag.query.assert_called_once()
+    call_kwargs = mock_rag.query.call_args
+    assert call_kwargs.kwargs.get("mode") == "local" or call_kwargs.args[1] == "local"

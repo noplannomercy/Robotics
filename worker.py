@@ -20,6 +20,7 @@ async def _safe_process(
     llm: LLMClient,
     rag: RAGClient,
     prompt_store,
+    rag_mode: str = "mix",
 ) -> None:
     """asyncio.create_task용 래퍼. 미처리 예외를 로깅."""
     try:
@@ -35,6 +36,7 @@ async def _safe_process(
             prompt_store=prompt_store,
             callback_field_map=config.callback_field_map,
             callback_keep_unmapped=config.callback_keep_unmapped,
+            rag_mode=rag_mode,
         )
     except Exception:
         logger.exception("Unhandled error in job %s", job.id)

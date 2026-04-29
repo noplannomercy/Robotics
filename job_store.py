@@ -141,18 +141,21 @@ class PostgresJobStore(JobStore):
             created_at=row["created_at"],
             started_at=row["started_at"],
             completed_at=row["completed_at"],
+            rag_mode=row.get("rag_mode") or "mix",
         )
 
     async def create(self, asset_type: str, file_name: str, source_hash: str, **kwargs) -> Job:
         job_id = str(uuid.uuid4())
         row = await self._pool.fetchrow(
             """INSERT INTO rdoc_job
-               (job_id, asset_type, file_name, file_size, source_hash, callback_url, requested_by)
-               VALUES ($1, $2, $3, $4, $5, $6, $7)
+               (job_id, asset_type, file_name, file_size, source_hash,
+                callback_url, requested_by, rag_mode)
+               VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
                RETURNING *""",
             job_id, asset_type, file_name,
             kwargs.get("file_size"), source_hash,
             kwargs.get("callback_url"), kwargs.get("requested_by"),
+            kwargs.get("rag_mode", "mix"),
         )
         return self._row_to_job(dict(row))
 

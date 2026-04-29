@@ -40,6 +40,7 @@ async def to_reverse_doc(
     prompt_store,
     callback_field_map: str = "",
     callback_keep_unmapped: bool = True,
+    rag_mode: str = "mix",
 ) -> None:
     """역문서화 파이프라인. 결과를 store에 저장하고 callback 전송."""
     await store.update_status(job_id, JobStatus.PROCESSING)
@@ -53,7 +54,7 @@ async def to_reverse_doc(
 
         # 2. RAG context 조회
         hint = extract_hint_keywords(raw)
-        context = await rag.query(hint) if hint else ""
+        context = await rag.query(hint, mode=rag_mode) if hint else ""
         if not context:
             logger.warning("Empty RAG context for job %s (asset_type=%s)", job_id, asset_type)
 

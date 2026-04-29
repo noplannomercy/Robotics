@@ -188,3 +188,50 @@ async def test_health_db_failure_returns_503():
     data = resp.json()
     assert data["status"] == "unavailable"
     assert data["reason"] == "db"
+
+
+# --- rag_mode 테스트 ---
+
+async def test_post_jobs_default_rag_mode(app_client):
+    """rag_mode 미지정 시 기본값 mix로 job 생성."""
+    client, store, ps = app_client
+    await ps.seed_if_empty("plsql", "프롬프트")
+    content = b"PROCEDURE PROC_TEST IS BEGIN NULL; END;"
+    with patch("app._safe_process", new_callable=AsyncMock):
+        async with client:
+            resp = await client.post(
+                "/jobs",
+                data={"asset_type": "plsql"},
+                files={"file": ("t.sql", content, "text/plain")},
+            )
+    assert resp.status_code == 202
+
+
+async def test_post_jobs_valid_rag_mode(app_client):
+    """유효한 rag_mode 값으로 job 생성."""
+    client, store, ps = app_client
+    await ps.seed_if_empty("plsql", "프롬프트")
+    content = b"PROCEDURE PROC_TEST IS BEGIN NULL; END;"
+    with patch("app._safe_process", new_callable=AsyncMock):
+        async with client:
+            resp = await client.post(
+                "/jobs",
+                data={"asset_type": "plsql", "rag_mode": "local"},
+                files={"file": ("t.sql", content, "text/plain")},
+            )
+    assert resp.status_code == 202
+
+
+async def test_post_jobs_invalid_rag_mode(app_client):
+    """유효하지 않은 rag_mode 값 → 400."""
+    client, store, ps = app_client
+    await ps.seed_if_empty("plsql", "프롬프트")
+    content = b"PROCEDURE PROC_TEST IS BEGIN NULL; END;"
+    async with client:
+        resp = await client.post(
+            "/jobs",
+            data={"asset_type": "plsql", "rag_mode": "invalid_mode"},
+            files={"file": ("t.sql", content, "text/plain")},
+        )
+    assert resp.status_code == 400
+    assert "Invalid rag_mode" in resp.json()["detail"]
