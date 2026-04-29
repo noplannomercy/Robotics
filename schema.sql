@@ -1,5 +1,5 @@
 -- schema.sql
--- Reverse-Doc Service DB schema (rdoc_ prefix)
+-- Robotics DB schema (rdoc_ prefix)
 
 CREATE TABLE IF NOT EXISTS rdoc_job (
     job_id       UUID PRIMARY KEY DEFAULT gen_random_uuid(),

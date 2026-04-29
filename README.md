@@ -1,4 +1,4 @@
-# Reverse Doc Service
+# Robotics
 
 Oracle PL/SQL 소스를 v2 canonical 식별자 markdown으로 역문서화하는 비동기 FastAPI 서비스.
 
