@@ -82,7 +82,7 @@ def create_app(
         if _state["pool"] is not None:
             await _state["pool"].close()
 
-    app = FastAPI(title="Reverse-Doc Service", version="1.0.0", lifespan=lifespan)
+    app = FastAPI(title="Robotics", version="1.0.0", lifespan=lifespan)
 
     from admin import create_admin_router
     auth_dep = verify_api_key(config)
