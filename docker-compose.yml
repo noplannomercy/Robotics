@@ -1,0 +1,16 @@
+services:
+  robotics:
+    build: .
+    image: robotics:latest
+    container_name: robotics
+    ports:
+      - "8004:8004"
+    env_file:
+      - .env
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8004/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
