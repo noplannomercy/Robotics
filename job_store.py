@@ -251,6 +251,21 @@ class PromptStore:
         )
         return dict(row)
 
+    async def list_versions(self, asset_type: str) -> list[dict]:
+        rows = await self._pool.fetch(
+            "SELECT id, asset_type, version, is_active, created_at "
+            "FROM rdoc_prompt WHERE asset_type = $1 ORDER BY version DESC",
+            asset_type,
+        )
+        return [dict(r) for r in rows]
+
+    async def get_version(self, asset_type: str, version: int) -> dict | None:
+        row = await self._pool.fetchrow(
+            "SELECT * FROM rdoc_prompt WHERE asset_type = $1 AND version = $2",
+            asset_type, version,
+        )
+        return dict(row) if row else None
+
 
 class InMemoryPromptStore:
     def __init__(self):
@@ -277,3 +292,21 @@ class InMemoryPromptStore:
         self._next_id += 1
         versions.insert(0, entry)
         return dict(entry)
+
+    async def list_versions(self, asset_type: str) -> list[dict]:
+        return [
+            {
+                "id": e["id"],
+                "asset_type": e["asset_type"],
+                "version": e["version"],
+                "is_active": e["is_active"],
+                "created_at": None,
+            }
+            for e in self._data.get(asset_type, [])
+        ]
+
+    async def get_version(self, asset_type: str, version: int) -> dict | None:
+        for e in self._data.get(asset_type, []):
+            if e["version"] == version:
+                return dict(e)
+        return None

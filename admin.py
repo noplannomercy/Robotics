@@ -55,4 +55,53 @@ def create_admin_router(get_state, auth_dep) -> APIRouter:
         result = await prompt_store.create_version(asset_type, text)
         return {"asset_type": asset_type, "version": result["version"], "is_active": result["is_active"]}
 
+    @router.get("/prompts/{asset_type}/history", summary="프롬프트 버전 목록")
+    async def list_prompt_history(asset_type: str):
+        state = get_state()
+        if not hasattr(state.prompt_store, "list_versions"):
+            raise HTTPException(status_code=501, detail="list_versions not supported")
+        versions = await state.prompt_store.list_versions(asset_type)
+        return {"asset_type": asset_type, "versions": versions}
+
+    @router.get("/prompts/{asset_type}/history/{version}", summary="특정 버전 조회")
+    async def get_prompt_version(asset_type: str, version: int):
+        state = get_state()
+        if not hasattr(state.prompt_store, "get_version"):
+            raise HTTPException(status_code=501, detail="get_version not supported")
+        prompt = await state.prompt_store.get_version(asset_type, version)
+        if prompt is None:
+            raise HTTPException(status_code=404, detail=f"Version {version} not found for asset_type: {asset_type}")
+        return {
+            "asset_type": asset_type,
+            "version": prompt["version"],
+            "text": prompt["text"],
+            "is_active": prompt["is_active"],
+            "created_at": str(prompt.get("created_at") or ""),
+        }
+
+    @router.post("/prompts/{asset_type}/rollback/{version}", summary="버전 롤백")
+    async def rollback_prompt(asset_type: str, version: int):
+        state = get_state()
+        if not hasattr(state.prompt_store, "get_version"):
+            raise HTTPException(status_code=501, detail="get_version not supported")
+        target = await state.prompt_store.get_version(asset_type, version)
+        if target is None:
+            raise HTTPException(status_code=404, detail=f"Version {version} not found for asset_type: {asset_type}")
+        new = await state.prompt_store.create_version(asset_type, target["text"])
+        return {"asset_type": asset_type, "new_version": new["version"], "rolled_back_from": version}
+
+    @router.get("/prompts/{asset_type}", summary="활성 프롬프트 조회")
+    async def get_active_prompt(asset_type: str):
+        state = get_state()
+        prompt = await state.prompt_store.get_active(asset_type)
+        if prompt is None:
+            raise HTTPException(status_code=404, detail=f"No active prompt for asset_type: {asset_type}")
+        return {
+            "asset_type": asset_type,
+            "version": prompt["version"],
+            "text": prompt["text"],
+            "is_active": prompt["is_active"],
+            "created_at": str(prompt.get("created_at") or ""),
+        }
+
     return router
