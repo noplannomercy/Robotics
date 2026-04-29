@@ -39,6 +39,9 @@ class JobStore(ABC):
     @abstractmethod
     async def delete(self, job_id: str) -> None: ...
 
+    @abstractmethod
+    async def count_by_status(self, statuses: list[str]) -> dict[str, int]: ...
+
 
 class InMemoryJobStore(JobStore):
     def __init__(self):
@@ -109,6 +112,13 @@ class InMemoryJobStore(JobStore):
 
     async def delete(self, job_id: str) -> None:
         self._jobs.pop(job_id, None)
+
+    async def count_by_status(self, statuses: list[str]) -> dict[str, int]:
+        result = {s: 0 for s in statuses}
+        for job in self._jobs.values():
+            if job.status in result:
+                result[job.status] += 1
+        return result
 
 
 class PostgresJobStore(JobStore):
@@ -213,6 +223,17 @@ class PostgresJobStore(JobStore):
 
     async def delete(self, job_id: str) -> None:
         await self._pool.execute("DELETE FROM rdoc_job WHERE job_id = $1", job_id)
+
+    async def count_by_status(self, statuses: list[str]) -> dict[str, int]:
+        rows = await self._pool.fetch(
+            "SELECT status, COUNT(*) as cnt FROM rdoc_job "
+            "WHERE status = ANY($1) GROUP BY status",
+            statuses,
+        )
+        result = {s: 0 for s in statuses}
+        for r in rows:
+            result[r["status"]] = r["cnt"]
+        return result
 
 
 class PromptStore:

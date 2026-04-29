@@ -118,3 +118,73 @@ async def test_file_too_large(app_client):
             files={"file": ("big.sql", large_content, "text/plain")},
         )
     assert resp.status_code == 413
+
+
+# --- count_by_status 단위 테스트 ---
+
+async def test_count_by_status_empty():
+    store = InMemoryJobStore()
+    counts = await store.count_by_status(["queued", "processing"])
+    assert counts == {"queued": 0, "processing": 0}
+
+
+async def test_count_by_status_with_jobs():
+    store = InMemoryJobStore()
+    await store.create(asset_type="plsql", file_name="a.sql", source_hash="h1")
+    await store.create(asset_type="plsql", file_name="b.sql", source_hash="h2")
+    job3 = await store.create(asset_type="plsql", file_name="c.sql", source_hash="h3")
+    await store.update_status(job3.id, JobStatus.PROCESSING)
+    counts = await store.count_by_status(["queued", "processing"])
+    assert counts["queued"] == 2
+    assert counts["processing"] == 1
+
+
+# --- 강화된 /health 테스트 ---
+
+async def test_health_includes_queue(app_client):
+    client, store, ps = app_client
+    async with client:
+        resp = await client.get("/health")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["status"] == "ok"
+    assert "queue" in data
+    assert "queued" in data["queue"]
+    assert "processing" in data["queue"]
+
+
+async def test_health_queue_counts_jobs(app_client):
+    client, store, ps = app_client
+    await store.create(asset_type="plsql", file_name="a.sql", source_hash="h1")
+    await store.create(asset_type="plsql", file_name="b.sql", source_hash="h2")
+    async with client:
+        resp = await client.get("/health")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["queue"]["queued"] == 2
+    assert data["queue"]["processing"] == 0
+
+
+async def test_health_db_failure_returns_503():
+    """PostgresJobStore의 count_by_status가 실패하면 503을 반환해야 한다."""
+    from unittest.mock import AsyncMock, MagicMock
+    from job_store import PostgresJobStore
+
+    mock_pool = MagicMock()
+    mock_pool.fetch = AsyncMock(side_effect=Exception("DB connection failed"))
+    mock_pool.acquire = MagicMock()
+    mock_pool.close = AsyncMock()
+
+    pg_store = PostgresJobStore(mock_pool)
+
+    config = Config(database_url="postgresql://mock", llm_url="http://mock", lightrag_url="http://mock")
+    app = create_app(store=pg_store, config=config)
+    transport = httpx.ASGITransport(app=app)
+
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        resp = await client.get("/health")
+
+    assert resp.status_code == 503
+    data = resp.json()
+    assert data["status"] == "unavailable"
+    assert data["reason"] == "db"

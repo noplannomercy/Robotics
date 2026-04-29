@@ -93,7 +93,28 @@ def create_app(
 
     @app.get("/health")
     async def health():
-        return {"status": "ok"}
+        from fastapi.responses import JSONResponse
+        from job_store import PostgresJobStore
+
+        store = _state["store"]
+
+        try:
+            counts = await store.count_by_status(["queued", "processing"])
+        except Exception:
+            if isinstance(store, PostgresJobStore):
+                return JSONResponse(
+                    status_code=503,
+                    content={"status": "unavailable", "reason": "db"},
+                )
+            counts = {"queued": 0, "processing": 0}
+
+        return {
+            "status": "ok",
+            "queue": {
+                "queued": counts.get("queued", 0),
+                "processing": counts.get("processing", 0),
+            },
+        }
 
     @app.post("/jobs", status_code=202)
     async def create_job(
