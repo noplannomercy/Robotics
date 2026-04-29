@@ -38,15 +38,40 @@ def create_admin_router(get_state, auth_dep) -> APIRouter:
             raise HTTPException(status_code=400, detail="Only failed jobs can be retried")
 
         new_hash = hashlib.sha256(f"{job.source_hash}-retry-{time.time()}".encode()).hexdigest()
-        new_job = await store.create(
-            asset_type=job.asset_type,
-            file_name=job.file_name,
-            source_hash=new_hash,
-            callback_url=job.callback_url,
-            requested_by=job.requested_by,
-        )
 
-        return {"job_id": new_job.id, "status": new_job.status, "note": "재시도 job 생성됨. 소스 재업로드 필요."}
+        if job.source_bytes is not None:
+            new_job = await store.create(
+                asset_type=job.asset_type,
+                file_name=job.file_name,
+                source_hash=new_hash,
+                source_bytes=job.source_bytes,
+                file_size=job.file_size,
+                callback_url=job.callback_url,
+                requested_by=job.requested_by,
+                rag_mode=job.rag_mode,
+            )
+            asyncio.create_task(
+                _safe_process(
+                    job=new_job,
+                    raw=job.source_bytes,
+                    store=store,
+                    config=state.config,
+                    llm=state.llm,
+                    rag=state.rag,
+                    prompt_store=state.prompt_store,
+                    rag_mode=job.rag_mode,
+                )
+            )
+            return {"job_id": new_job.id, "status": new_job.status, "note": "재시도 job 생성됨. 즉시 처리 시작."}
+        else:
+            new_job = await store.create(
+                asset_type=job.asset_type,
+                file_name=job.file_name,
+                source_hash=new_hash,
+                callback_url=job.callback_url,
+                requested_by=job.requested_by,
+            )
+            return {"job_id": new_job.id, "status": new_job.status, "note": "재시도 job 생성됨. 소스 재업로드 필요."}
 
     @router.put("/prompts/{asset_type}", summary="프롬프트 새 버전 등록")
     async def update_prompt(asset_type: str, text: str = Body(..., embed=True)):
@@ -54,6 +79,14 @@ def create_admin_router(get_state, auth_dep) -> APIRouter:
         prompt_store = state.prompt_store
         result = await prompt_store.create_version(asset_type, text)
         return {"asset_type": asset_type, "version": result["version"], "is_active": result["is_active"]}
+
+    @router.get("/stats", summary="운영 통계")
+    async def get_stats():
+        state = get_state()
+        store = state.store
+        if not hasattr(store, "get_stats"):
+            raise HTTPException(status_code=501, detail="get_stats not supported")
+        return await store.get_stats()
 
     @router.get("/prompts/{asset_type}/history", summary="프롬프트 버전 목록")
     async def list_prompt_history(asset_type: str):

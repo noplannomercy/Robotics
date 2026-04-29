@@ -46,6 +46,7 @@ def create_app(
         "llm": AsyncMock(),
         "rag": AsyncMock(),
         "pool": None,
+        "config": config,
     }
 
     @asynccontextmanager
@@ -155,6 +156,7 @@ def create_app(
             file_name=file.filename or "unknown",
             source_hash=source_hash,
             file_size=len(raw),
+            source_bytes=raw,
             callback_url=callback_url,
             requested_by=requested_by,
             rag_mode=rag_mode,

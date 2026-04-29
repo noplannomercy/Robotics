@@ -42,6 +42,9 @@ class JobStore(ABC):
     @abstractmethod
     async def count_by_status(self, statuses: list[str]) -> dict[str, int]: ...
 
+    @abstractmethod
+    async def get_stats(self) -> dict: ...
+
 
 class InMemoryJobStore(JobStore):
     def __init__(self):
@@ -120,6 +123,49 @@ class InMemoryJobStore(JobStore):
                 result[job.status] += 1
         return result
 
+    async def get_stats(self) -> dict:
+        jobs = list(self._jobs.values())
+        total = len(jobs)
+
+        by_status: dict[str, int] = {"queued": 0, "processing": 0, "completed": 0, "failed": 0}
+        by_asset_type: dict[str, int] = {}
+        retry_count = 0
+        processing_times: list[float] = []
+        recent_failures: list[dict] = []
+
+        for job in jobs:
+            status_key = str(job.status)
+            by_status[status_key] = by_status.get(status_key, 0) + 1
+            by_asset_type[job.asset_type] = by_asset_type.get(job.asset_type, 0) + 1
+            if job.attempts > 1:
+                retry_count += 1
+            if (
+                str(job.status) == "completed"
+                and job.started_at is not None
+                and job.completed_at is not None
+            ):
+                duration = (job.completed_at - job.started_at).total_seconds()
+                processing_times.append(duration)
+            if str(job.status) == "failed":
+                recent_failures.append({
+                    "job_id": job.id,
+                    "file_name": job.file_name,
+                    "error": job.error,
+                    "failed_at": str(job.completed_at) if job.completed_at else None,
+                })
+
+        recent_failures.sort(key=lambda x: x["failed_at"] or "", reverse=True)
+
+        return {
+            "total": total,
+            "by_status": by_status,
+            "by_asset_type": by_asset_type,
+            "success_rate": round(by_status.get("completed", 0) / total * 100, 1) if total > 0 else 0.0,
+            "avg_processing_sec": round(sum(processing_times) / len(processing_times), 1) if processing_times else None,
+            "retry_rate": round(retry_count / total * 100, 1) if total > 0 else 0.0,
+            "recent_failures": recent_failures[:5],
+        }
+
 
 class PostgresJobStore(JobStore):
     def __init__(self, pool: "asyncpg.Pool"):
@@ -133,6 +179,7 @@ class PostgresJobStore(JobStore):
             file_name=row["file_name"],
             file_size=row["file_size"],
             source_hash=row["source_hash"],
+            source_bytes=row.get("source_bytes"),
             result=row["result"],
             error=row["error"],
             attempts=row["attempts"],
@@ -149,11 +196,12 @@ class PostgresJobStore(JobStore):
         row = await self._pool.fetchrow(
             """INSERT INTO rdoc_job
                (job_id, asset_type, file_name, file_size, source_hash,
-                callback_url, requested_by, rag_mode)
-               VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+                source_bytes, callback_url, requested_by, rag_mode)
+               VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
                RETURNING *""",
             job_id, asset_type, file_name,
             kwargs.get("file_size"), source_hash,
+            kwargs.get("source_bytes"),
             kwargs.get("callback_url"), kwargs.get("requested_by"),
             kwargs.get("rag_mode", "mix"),
         )
@@ -237,6 +285,56 @@ class PostgresJobStore(JobStore):
         for r in rows:
             result[r["status"]] = r["cnt"]
         return result
+
+    async def get_stats(self) -> dict:
+        total = await self._pool.fetchval("SELECT COUNT(*) FROM rdoc_job") or 0
+
+        by_status_rows = await self._pool.fetch(
+            "SELECT status, COUNT(*) as cnt FROM rdoc_job GROUP BY status"
+        )
+        by_status: dict[str, int] = {"queued": 0, "processing": 0, "completed": 0, "failed": 0}
+        for r in by_status_rows:
+            by_status[r["status"]] = r["cnt"]
+
+        by_type_rows = await self._pool.fetch(
+            "SELECT asset_type, COUNT(*) as cnt FROM rdoc_job GROUP BY asset_type"
+        )
+        by_asset_type = {r["asset_type"]: r["cnt"] for r in by_type_rows}
+
+        avg_raw = await self._pool.fetchval(
+            "SELECT EXTRACT(EPOCH FROM AVG(completed_at - started_at)) "
+            "FROM rdoc_job WHERE status = 'completed' "
+            "AND started_at IS NOT NULL AND completed_at IS NOT NULL"
+        )
+
+        retry_count = await self._pool.fetchval(
+            "SELECT COUNT(*) FROM rdoc_job WHERE attempts > 1"
+        ) or 0
+
+        failure_rows = await self._pool.fetch(
+            "SELECT job_id, file_name, error, completed_at FROM rdoc_job "
+            "WHERE status = 'failed' ORDER BY completed_at DESC LIMIT 5"
+        )
+        recent_failures = [
+            {
+                "job_id": str(r["job_id"]),
+                "file_name": r["file_name"],
+                "error": r["error"],
+                "failed_at": str(r["completed_at"]) if r["completed_at"] else None,
+            }
+            for r in failure_rows
+        ]
+
+        completed = by_status.get("completed", 0)
+        return {
+            "total": total,
+            "by_status": by_status,
+            "by_asset_type": by_asset_type,
+            "success_rate": round(completed / total * 100, 1) if total > 0 else 0.0,
+            "avg_processing_sec": round(float(avg_raw), 1) if avg_raw is not None else None,
+            "retry_rate": round(retry_count / total * 100, 1) if total > 0 else 0.0,
+            "recent_failures": recent_failures,
+        }
 
 
 class PromptStore:

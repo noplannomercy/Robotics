@@ -25,6 +25,7 @@ class Job(BaseModel):
     file_name: str
     file_size: int | None = None
     source_hash: str
+    source_bytes: bytes | None = None
     result: str | None = None
     error: str | None = None
     attempts: int = 0

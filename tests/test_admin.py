@@ -3,6 +3,7 @@ import httpx
 from app import create_app
 from job_store import InMemoryJobStore, InMemoryPromptStore
 from config import Config
+from models import JobStatus
 
 
 @pytest.fixture
@@ -130,3 +131,77 @@ async def test_rollback_prompt_version_not_found(admin_client):
     async with client:
         resp = await client.post("/admin/prompts/plsql/rollback/99")
     assert resp.status_code == 404
+
+
+# --- Group B: retry + stats 테스트 ---
+
+async def test_retry_with_source_bytes(admin_client):
+    """source_bytes 있는 job은 즉시 재처리 (소스 재업로드 불필요)."""
+    from unittest.mock import patch, AsyncMock
+    client, store, ps = admin_client
+    await ps.seed_if_empty("plsql", "프롬프트")
+
+    raw = b"PROCEDURE PROC_TEST IS BEGIN NULL; END;"
+    job = await store.create(
+        asset_type="plsql",
+        file_name="t.sql",
+        source_hash="h-retry",
+        source_bytes=raw,
+    )
+    await store.save_error(job.id, "검증 실패")
+
+    with patch("worker._safe_process", new_callable=AsyncMock):
+        async with client:
+            resp = await client.post(f"/admin/jobs/{job.id}/retry")
+
+    assert resp.status_code == 200
+    data = resp.json()
+    assert "즉시 처리" in data["note"]
+    assert data["job_id"] != job.id
+
+
+async def test_retry_without_source_bytes(admin_client):
+    """source_bytes 없는 기존 레코드는 안내 메시지 반환."""
+    client, store, ps = admin_client
+    job = await store.create(
+        asset_type="plsql",
+        file_name="t.sql",
+        source_hash="h-no-bytes",
+    )
+    await store.save_error(job.id, "검증 실패")
+    async with client:
+        resp = await client.post(f"/admin/jobs/{job.id}/retry")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert "재업로드" in data["note"]
+
+
+async def test_get_stats_empty(admin_client):
+    client, store, ps = admin_client
+    async with client:
+        resp = await client.get("/admin/stats")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["total"] == 0
+    assert data["success_rate"] == 0.0
+    assert data["recent_failures"] == []
+
+
+async def test_get_stats_with_data(admin_client):
+    client, store, ps = admin_client
+    j1 = await store.create(asset_type="plsql", file_name="a.sql", source_hash="hs1")
+    await store.update_status(j1.id, JobStatus.PROCESSING)
+    await store.save_result(j1.id, "# result")
+
+    j2 = await store.create(asset_type="plsql", file_name="b.sql", source_hash="hs2")
+    await store.save_error(j2.id, "실패 에러")
+
+    async with client:
+        resp = await client.get("/admin/stats")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["total"] == 2
+    assert data["by_status"]["completed"] == 1
+    assert data["by_status"]["failed"] == 1
+    assert data["success_rate"] == 50.0
+    assert len(data["recent_failures"]) == 1
