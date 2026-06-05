@@ -1,45 +1,68 @@
 # prompts.py
 """PromptStore 초기 시드 콘텐츠. asset_type별 v2 표준 역문서 생성 프롬프트."""
 
-PLSQL_PROMPT = """당신은 Oracle PL/SQL 전문가이자 역문서 생성기다.
-아래 PL/SQL 패키지 소스 코드와 참조 컨텍스트를 읽고, v2 표준에 따라 역문서 Markdown을 생성하라.
+PLSQL_PROMPT = """당신은 HCA(현대캐피탈아메리카) Oracle PL/SQL 전문가이자 역문서 생성기다.
+아래 PL/SQL 패키지 헤더(스펙) 파일과 참조 컨텍스트를 읽고, HCA C2R 표준 9섹션 구조로 역문서 Markdown을 생성하라.
 
-## v2 표준 표기 규칙 (반드시 준수)
+## HCA 코드베이스 특성
 
-1. **식별자를 문법적 주체/객체 자리에 박는다** — PROC_*, TBL_*, FUNC_*, PKG_* 등을 한국어 조사 앞에 직접 배치.
-   올바름: "PROC_CREDIT_EVALUATION은 TBL_LOAN_APPLICATION.STATUS를 변경한다."
-   금지: "신용평가 프로시저(PROC_CREDIT_EVALUATION)가..."
+- 스키마: COOWNSER, COOWNHYP 혼재
+- 식별자: 프랑스어(FR) 및 스페인어(ES) 혼재 — 처음 등장 시 한국어 의미 병기
+  - 예: DOSSIER(FR: 계약파일), DOSPHASE(FR: 계약단계), num_dossier(FR: 파일번호), id_paciente(ES: 환자ID)
+- 테이블명 prefix 없음 — DOSSIER, DTFF1050, DOSOPLANE 등 그대로 사용
+- 컬럼은 TABLE.COLUMN 점 표기 (예: DOSSIER.DOSID, DOSPHASE.PHACODE)
+- 프로시저/함수명: SP_*, P_*, I_*, F_*, S_* 형태
 
-2. **컬럼은 반드시 점 표기** — TBL_NAME.COLUMN_NAME 형태만 허용. 소스 SQL에서 컬럼이 단독으로 사용되더라도(예: WHERE APPLICATION_ID = ..., SET APPROVE_DATE = SYSDATE) 역문서에서는 반드시 TBL.COL 형태로.
-   올바름: TBL_LOAN_APPLICATION.APPLICATION_ID, TBL_LOAN_APPLICATION.APPROVE_DATE
-   금지: APPLICATION_ID 단독, APPROVE_DATE 단독, REJECT_REASON 단독.
+## 출력 표준 — 9섹션 고정 구조 (순서 변경 금지, §기호/FAQ 금지)
 
-3. **enum 값은 반드시 TBL.COL='val' 형태** — INSERT/UPDATE에서 컬럼에 저장되는 따옴표 붙은 값을 단독으로 쓰는 것은 절대 금지. INSERT 컬럼 순서를 보고 어느 컬럼의 값인지 파악하라.
-   올바름: TBL_APPROVAL_HISTORY.EVAL_TYPE='CREDIT', TBL_LOAN_APPLICATION.STATUS='APPROVED'
-   금지: 'CREDIT' 단독, 'FINAL' 단독, 'APPROVED' 단독.
+### 1. 개요
+| 항목 | 내용 |
+|------|------|
+| 패키지명 | (소스에서 추출) |
+| 목적 | (한 줄 요약) |
+| 최초 작성 | (소스 주석에서 추출, 없으면 —) |
+| 실행 쉘 | (소스 주석에서 추출, 없으면 —) |
+| 계정 유형 | (해당 없으면 전체) |
 
-4. **거절/알림 코드는 반드시 unquoted 단독** — PROC_*/FUNC_* 호출 인자로 전달되는 문자열(예: PROC_NOTIFY_APPLICANT(..., 'REJECT_CREDIT'))은 역문서에서 따옴표 없이 기술. 절대로 따옴표 붙이지 말 것.
-   올바름: REJECT_CREDIT 사유로 처리, LTV_EXCEEDED 조건으로 거절
-   금지: 'REJECT_CREDIT' 단독, 'REJECT_LIMIT' 단독.
+### 2. 처리 흐름
+ASCII 다이어그램 또는 단계 기술. 참조 컨텍스트에서 실제 테이블 흐름 확인하여 작성.
 
-5. **소스의 모든 식별자 포함 필수** — TBL_*, PROC_*, FUNC_*, PKG_*, SEQ_*, FK_*, PK_* 접두사로 시작하는 식별자가 소스에 등장하면 역문서에 반드시 언급. SEQ_*(시퀀스)와 FK_*(외래키) 누락 금지.
+### 3. 입출력 파라미터
+| 파라미터 | 방향 | 타입 | 설명 |
+|----------|------|------|------|
+각 프로시저/함수별 파라미터 표. FR/ES 파라미터명은 한국어 설명 병기.
 
-6. **업무 정책 canonical 명 사용** — "대출 한도 산정 정책", "신용평가 정책" 등 정확히.
-   금지: "신용평가 기준", "한도 정책" 등 동의어.
+### 4. 프로시저/함수 구성
+| 프로시저/함수 | 접근 | 역할 |
+|-------------|------|------|
+PUBLIC(헤더 선언)/PRIVATE 구분.
 
-## 출력 형식
+### 5. 핵심 로직
+각 프로시저/함수별 ### 서브섹션. 참조 컨텍스트에서 실제 로직, 조건, SQL 끌어와 설명.
+테이블명은 그대로(DOSSIER, DTFF1050 등), 컬럼은 TABLE.COLUMN 형태.
 
-패키지 설명 한 단락 후, PROC/FUNC 단위로 ## 헤더 절을 구성한다.
-각 절은 해당 프로시저/함수의 역할, 처리 흐름, 테이블/컬럼 조작, 거절 분기를 담는다.
-소스에 SEQ_* 또는 FK_* 식별자가 있으면 해당 절 또는 별도 절에 반드시 기술한다.
+### 6. PROCEDURE → TABLE 참조 관계
+형식: `-- {프로시저명} references {테이블명} ({접근유형} — {이유})`
+호출자 주체로 서술. 피호출자 시점 금지.
 
-예시:
-## PROC_CREDIT_EVALUATION
+### 7. 테이블 의존성
+| 테이블 | 접근 유형 | 목적 |
+|--------|----------|------|
+접근 유형: SELECT / INSERT / UPDATE / DELETE / MERGE
 
-PROC_CREDIT_EVALUATION은 신용평가 정책에 따라 신청 건의 신용 적격성을 판정한다.
-TBL_LOAN_APPLICATION.STATUS를 'APPROVED' 또는 'REJECTED'로 갱신하며,
-SEQ_APPROVAL_HISTORY를 사용해 TBL_APPROVAL_HISTORY에 이력을 기록한다.
-거절 사유는 LTV_EXCEEDED, CREDIT_LOW 등의 코드로 기록된다.
+### 8. 종속 컴포넌트
+| 컴포넌트 | 역할 |
+|---------|------|
+외부 패키지/함수 호출 목록.
+
+### 9. 알려진 특이사항
+번호 목록. 참조 컨텍스트에서 발견된 주의사항·예외·히스토리 포함.
+
+## 작성 원칙
+- 반드시 한국어로 작성
+- FR/ES 식별자는 처음 등장 시 한국어 의미 병기, 이후 식별자 그대로 사용
+- 참조 컨텍스트 정보를 최대한 활용하여 풍부하게 작성
+- 소스에 없는 내용은 지어내지 않는다. 확인 불가한 정보는 — 또는 "확인 필요"로 표기
 """
 
 DICTIONARY_PROMPT = """당신은 Oracle 데이터 딕셔너리 전문가이자 역문서 생성기다.

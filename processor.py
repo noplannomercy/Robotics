@@ -13,15 +13,36 @@ from validator import validate
 logger = logging.getLogger(__name__)
 
 MAX_RETRIES = 3
-PROJECT_ID_RE = re.compile(r'(?<![A-Z0-9_])(?:TBL|PROC|FUNC|PKG|SEQ|FK|PK)_[A-Z0-9_]+(?![A-Z0-9_])')
+
+# HCA 식별자 추출 패턴
+# 패키지명, 프로시저명, 테이블명 등 대문자+숫자+언더스코어 조합
+HCA_ID_RE = re.compile(r'\b([A-Z][A-Z0-9_]{2,})\b')
+
+# LightRAG 쿼리 힌트에서 제외할 SQL 키워드
+SQL_KEYWORDS = {
+    'SELECT', 'FROM', 'WHERE', 'AND', 'OR', 'NOT', 'IN', 'IS', 'NULL',
+    'CREATE', 'REPLACE', 'PACKAGE', 'BODY', 'AS', 'BEGIN', 'END',
+    'PROCEDURE', 'FUNCTION', 'RETURN', 'TYPE', 'TABLE', 'INDEX',
+    'NUMBER', 'VARCHAR', 'VARCHAR2', 'DATE', 'CHAR', 'NVARCHAR2',
+    'BOOLEAN', 'TRUE', 'FALSE', 'OUT', 'CURSOR', 'REF', 'RECORD',
+    'IF', 'THEN', 'ELSE', 'ELSIF', 'LOOP', 'FOR', 'WHILE', 'EXIT',
+    'EXCEPTION', 'WHEN', 'OTHERS', 'RAISE', 'COMMIT', 'ROLLBACK',
+    'INSERT', 'UPDATE', 'DELETE', 'MERGE', 'INTO', 'VALUES', 'SET',
+    'USING', 'MATCHED', 'BINARY', 'INTEGER', 'PLS', 'SYS', 'REFCURSOR',
+    'PARALLEL', 'ENABLE', 'PIPELINED', 'PRAGMA', 'AUTONOMOUS',
+    'TRANSACTION', 'DEFAULT', 'CONSTANT', 'NOCOPY', 'DETERMINISTIC',
+}
 
 
 def extract_hint_keywords(source: str | bytes) -> str:
-    """소스에서 project 식별자만 추출해 RAG 쿼리 힌트 생성."""
+    """HCA PL/SQL 소스에서 패키지명·프로시저명·테이블명을 추출해 RAG 쿼리 힌트 생성."""
     if isinstance(source, bytes):
         source = source.decode("utf-8", errors="replace")
-    ids = sorted(set(PROJECT_ID_RE.findall(source)))
-    return " ".join(ids)
+
+    candidates = set(HCA_ID_RE.findall(source))
+    # SQL 키워드 제거 + 3자 이하 제거
+    keywords = {c for c in candidates if c not in SQL_KEYWORDS and len(c) > 3}
+    return " ".join(sorted(keywords)[:30])  # 상위 30개만 사용
 
 
 def compute_source_hash(source: bytes, prompt_version: str) -> str:
