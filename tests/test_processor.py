@@ -120,7 +120,7 @@ async def test_to_reverse_doc_retry_on_validation_failure(store, prompt_store):
 
 @pytest.mark.asyncio
 async def test_to_reverse_doc_all_retries_fail(store, prompt_store):
-    """3회 모두 validate 실패 → job FAILED."""
+    """3회 모두 validate 실패 → job FAILED + 최선 버전 보존 + 미해결 항목 기록."""
     await prompt_store.seed_if_empty("plsql", "프롬프트")
     job = await store.create(
         asset_type="plsql", file_name="f.sql", source_hash="h3", callback_url=None
@@ -146,6 +146,54 @@ async def test_to_reverse_doc_all_retries_fail(store, prompt_store):
     updated = await store.get(job.id)
     assert updated.status == JobStatus.FAILED
     assert "검증 실패" in updated.error
+    # B2: 마지막 생성된 최선 버전을 content=""로 폐기하지 않고 보존해야 한다.
+    assert updated.result == "validate 항상 실패할 내용"
+    assert updated.result != ""
+
+
+@pytest.mark.asyncio
+async def test_to_reverse_doc_all_retries_fail_preserves_best_version_in_callback(store, prompt_store):
+    """B2: 3회 실패 시 callback content는 빈 문자열이 아니라 최선 버전이어야 한다."""
+    from unittest.mock import patch
+
+    await prompt_store.seed_if_empty("plsql", "프롬프트")
+    job = await store.create(
+        asset_type="plsql", file_name="f.sql", source_hash="h3b",
+        callback_url="http://callback.test/hook",
+    )
+
+    best = "일부 로직만 설명한 미완성 역문서 (프로시저명 누락)"
+    llm = AsyncMock()
+    llm.generate = AsyncMock(return_value=best)
+    rag = AsyncMock()
+    rag.query = AsyncMock(return_value="")
+
+    captured = {}
+
+    async def fake_send_callback(url, payload, field_map, keep_unmapped):
+        captured["payload"] = payload
+
+    with patch("processor.send_callback", side_effect=fake_send_callback):
+        await to_reverse_doc(
+            raw=b"PROCEDURE PROC_IMPORTANT IS BEGIN NULL; END;",
+            asset_type="plsql",
+            job_id=job.id,
+            file_name="f.sql",
+            callback_url="http://callback.test/hook",
+            store=store,
+            llm=llm,
+            rag=rag,
+            prompt_store=prompt_store,
+        )
+
+    payload = captured["payload"]
+    assert payload["status"] == "failed"
+    # 빈 문자열로 폐기 금지: 최선 버전이 content로 전달돼야 한다.
+    assert payload["content"] == best
+    assert payload["content"] != ""
+    # 미해결 항목(피드백)이 별도로 기록돼야 한다.
+    assert payload["error"]
+    assert "검증 실패" in payload["error"]
 
 
 @pytest.mark.asyncio

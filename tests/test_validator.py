@@ -45,6 +45,77 @@ def test_check2_fail_lowercase_identifier():
     assert "check 2" in result.feedback
 
 
+# --- B1: 0% 임계 — 프로시저 1개만 누락돼도 즉시 실패 ---
+
+def test_b1_single_missing_public_proc_fails():
+    # public 프로시저 2개 중 단 1개만 누락돼도 (50% 미만) 즉시 실패해야 한다.
+    raw = (
+        "PROCEDURE PROC_ALPHA IS BEGIN NULL; END;\n"
+        "PROCEDURE PROC_BETA IS BEGIN NULL; END;"
+    )
+    reverse = "PROC_ALPHA는 실행된다."  # PROC_BETA 누락 (1/2 = 50%, 0% 임계여야 fail)
+    result = validate(raw, reverse)
+    assert result.passed is False
+    assert "check 2" in result.feedback
+    assert "PROC_BETA" in result.feedback
+
+
+def test_b1_all_public_procs_present_passes():
+    raw = (
+        "PROCEDURE PROC_ALPHA IS BEGIN NULL; END;\n"
+        "PROCEDURE PROC_BETA IS BEGIN NULL; END;"
+    )
+    reverse = "PROC_ALPHA와 PROC_BETA를 모두 설명한다."
+    result = validate(raw, reverse)
+    assert result.passed is True
+
+
+# --- B3: HEADER 선언 기준 public 판별 (분모 정확화) ---
+
+def test_b3_sp_refresh_proc_not_overexcluded():
+    # SP_REFRESH 접두 프로시저도 선언돼 있으면 public — 과대제외 금지.
+    # 누락 시 fail 해야 한다 (구버전은 SP_REFRESH* 를 분모에서 빼버려 통과시킴).
+    raw = "PROCEDURE SP_REFRESH_CACHE IS BEGIN NULL; END;"
+    reverse = "이 패키지는 캐시를 갱신한다."  # SP_REFRESH_CACHE 누락
+    result = validate(raw, reverse)
+    assert result.passed is False
+    assert "SP_REFRESH_CACHE" in result.feedback
+
+
+def test_b3_body_only_proc_is_private_not_required():
+    # HEADER(스펙)에 없고 BODY 안에만 있는 프로시저는 private → 분모에서 제외.
+    # 역문서에 없어도 실패하면 안 된다.
+    raw = (
+        "CREATE OR REPLACE PACKAGE PKG_LOAN AS\n"
+        "  PROCEDURE PROC_PUBLIC_API;\n"
+        "END PKG_LOAN;\n"
+        "CREATE OR REPLACE PACKAGE BODY PKG_LOAN AS\n"
+        "  PROCEDURE PROC_INTERNAL_HELPER IS BEGIN NULL; END;\n"
+        "  PROCEDURE PROC_PUBLIC_API IS BEGIN NULL; END;\n"
+        "END PKG_LOAN;"
+    )
+    # public(PROC_PUBLIC_API)만 언급, private helper 는 언급 안 함.
+    reverse = "PKG_LOAN의 PROC_PUBLIC_API는 외부에 노출되는 API다."
+    result = validate(raw, reverse)
+    assert result.passed is True
+
+
+def test_b3_header_declared_public_proc_missing_fails():
+    # HEADER 에 선언된 public 프로시저가 역문서에서 누락되면 실패해야 한다.
+    raw = (
+        "CREATE OR REPLACE PACKAGE PKG_LOAN AS\n"
+        "  PROCEDURE PROC_PUBLIC_API;\n"
+        "END PKG_LOAN;\n"
+        "CREATE OR REPLACE PACKAGE BODY PKG_LOAN AS\n"
+        "  PROCEDURE PROC_PUBLIC_API IS BEGIN NULL; END;\n"
+        "END PKG_LOAN;"
+    )
+    reverse = "PKG_LOAN 패키지에 대한 설명."  # PROC_PUBLIC_API 누락
+    result = validate(raw, reverse)
+    assert result.passed is False
+    assert "PROC_PUBLIC_API" in result.feedback
+
+
 # --- check 3: no standalone enum values ---
 
 def test_check3_pass_enum_with_table_col():

@@ -31,6 +31,11 @@ class JobStore(ABC):
     async def save_error(self, job_id: str, error: str) -> None: ...
 
     @abstractmethod
+    async def save_partial(self, job_id: str, result: str, error: str) -> None:
+        """검증 미통과지만 최선 버전(result)을 보존하면서 미해결 항목(error)을 기록한다."""
+        ...
+
+    @abstractmethod
     async def increment_attempts(self, job_id: str) -> None: ...
 
     @abstractmethod
@@ -93,6 +98,16 @@ class InMemoryJobStore(JobStore):
             job = self._jobs[job_id]
             self._jobs[job_id] = job.model_copy(update={
                 "status": JobStatus.FAILED,
+                "error": error,
+                "completed_at": datetime.now(timezone.utc),
+            })
+
+    async def save_partial(self, job_id: str, result: str, error: str) -> None:
+        if job_id in self._jobs:
+            job = self._jobs[job_id]
+            self._jobs[job_id] = job.model_copy(update={
+                "status": JobStatus.FAILED,
+                "result": result,
                 "error": error,
                 "completed_at": datetime.now(timezone.utc),
             })
@@ -244,6 +259,13 @@ class PostgresJobStore(JobStore):
         await self._pool.execute(
             "UPDATE rdoc_job SET status = 'failed', error = $1, completed_at = now() WHERE job_id = $2",
             error, job_id,
+        )
+
+    async def save_partial(self, job_id: str, result: str, error: str) -> None:
+        await self._pool.execute(
+            "UPDATE rdoc_job SET status = 'failed', result = $1, error = $2, "
+            "completed_at = now() WHERE job_id = $3",
+            result, error, job_id,
         )
 
     async def increment_attempts(self, job_id: str) -> None:

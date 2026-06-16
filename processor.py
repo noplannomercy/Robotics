@@ -103,11 +103,19 @@ async def to_reverse_doc(
                 job_id, attempt + 1, verdict.feedback,
             )
         else:
-            # 3회 모두 실패
-            await store.save_error(job_id, f"검증 실패 (3회): {last_feedback}")
+            # 3회 모두 실패: 최선 버전(result)을 폐기하지 않고 보존 + 미해결 항목 기록
+            unresolved = f"검증 실패 (3회): {last_feedback}"
+            best_version = result or ""
+            await store.save_partial(job_id, result=best_version, error=unresolved)
             await send_callback(
                 url=callback_url,
-                payload={"rdoc_job_id": job_id, "file_name": file_name, "content": "", "status": "failed", "error": last_feedback},
+                payload={
+                    "rdoc_job_id": job_id,
+                    "file_name": file_name,
+                    "content": best_version,
+                    "status": "failed",
+                    "error": unresolved,
+                },
                 field_map=callback_field_map,
                 keep_unmapped=callback_keep_unmapped,
             )
