@@ -35,7 +35,7 @@ def test_diamond_invariant():
 
 
 def test_cycle_reported_not_ordered():
-    # A↔B 순환, C는 A에 의존 → A,B,C 모두 순환에 막혀 ordered에 못 들어감
+    # A↔B 순환. C는 순환 아니지만 순환 노드(A)에 의존 → 처리 불가, cycle_nodes에 포함
     nodes = {"A", "B", "C"}
     edges = [("A", "B"), ("B", "A"), ("C", "A")]
     ordered, cycles = order_by_dependency(nodes, edges)
@@ -47,3 +47,18 @@ def test_unknown_edge_endpoints_ignored():
     ordered, cycles = order_by_dependency({"A"}, [("A", "GHOST"), ("GHOST", "A")])
     assert ordered == ["A"]
     assert cycles == []
+
+
+def test_empty_input():
+    ordered, cycles = order_by_dependency(set(), [])
+    assert ordered == []
+    assert cycles == []
+
+
+def test_cycle_with_reachable_callee():
+    # A↔B 순환, A→C : C는 의존 없으니 ordered, A·B는 cycle
+    nodes = {"A", "B", "C"}
+    edges = [("A", "B"), ("B", "A"), ("A", "C")]
+    ordered, cycles = order_by_dependency(nodes, edges)
+    assert ordered == ["C"]
+    assert set(cycles) == {"A", "B"}
