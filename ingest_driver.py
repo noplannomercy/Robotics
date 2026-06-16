@@ -4,9 +4,12 @@
 run_ingestion: 순수 오케스트레이션(클라이언트 주입). 단위 테스트 대상.
 HttpRoboticsClient: 실제 /jobs 호출. 사내망 통합 시 사용(단위 테스트 제외).
 """
+import logging
 import time
 from dataclasses import dataclass, field
 from typing import Callable, Protocol
+
+logger = logging.getLogger(__name__)
 
 
 class RoboticsClient(Protocol):
@@ -53,23 +56,33 @@ class HttpRoboticsClient:
         self._poll = poll_interval
         self._timeout = timeout
 
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.close()
+
     def submit(self, name: str, source: bytes, asset_type: str) -> str:
         resp = self._http.post(
             "/jobs",
-            files={"file": (f"{name}.sql", source)},
+            files={"file": (name, source)},
             data={"asset_type": asset_type, "requested_by": "ingest_driver"},
         )
         resp.raise_for_status()
         return resp.json()["job_id"]
 
     def wait_until_done(self, job_id: str) -> str:
+        import httpx
         deadline = time.monotonic() + self._timeout
         while time.monotonic() < deadline:
-            resp = self._http.get(f"/jobs/{job_id}")
-            resp.raise_for_status()
-            status = resp.json()["status"]
-            if status in ("completed", "failed"):
-                return status
+            try:
+                resp = self._http.get(f"/jobs/{job_id}")
+                resp.raise_for_status()
+                status = resp.json()["status"]
+                if status in ("completed", "failed"):
+                    return status
+            except (httpx.HTTPStatusError, httpx.RequestError) as exc:
+                logger.warning("폴링 중 일시적 오류 (job=%s): %s — 재시도 중", job_id, exc)
             time.sleep(self._poll)
         return "timeout"
 
