@@ -8,6 +8,7 @@ from unittest.mock import AsyncMock
 from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
 
 from auth import verify_api_key
+from callback import send_callback
 from config import Config
 from job_store import InMemoryJobStore, InMemoryPromptStore, JobStore
 from models import JobStatus
@@ -149,6 +150,21 @@ def create_app(
 
         existing = await current_store.get_by_hash(source_hash)
         if existing:
+            # 원 콜백은 원 제출자에게만 발사됐으므로, 이 제출자에게도 콜백을 보내
+            # Pylon 등 호출자가 영구 processing에 고착되는 것을 방지 (D10)
+            if callback_url and existing.status in (JobStatus.COMPLETED, JobStatus.FAILED):
+                asyncio.create_task(send_callback(
+                    url=callback_url,
+                    payload={
+                        "rdoc_job_id": existing.id,
+                        "file_name": existing.file_name,
+                        "content": existing.result or "",
+                        "status": "completed" if existing.status == JobStatus.COMPLETED else "failed",
+                        "error": existing.error,
+                    },
+                    field_map=config.callback_field_map,
+                    keep_unmapped=config.callback_keep_unmapped,
+                ))
             return {"job_id": existing.id, "status": existing.status, "cached": True}
 
         job = await current_store.create(

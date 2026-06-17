@@ -1,9 +1,25 @@
 # tests/test_callback.py
+import json
 import pytest
 import httpx
-from callback import send_callback
+from callback import send_callback, _apply_field_map
 
 CALLBACK_URL = "http://ingestion-router/callback/forge"
+
+
+def test_apply_field_map_protects_reserved_keys():
+    """field_map이 rdoc_job_id/status/error를 rename·drop 못함 — 콜백 라우팅 계약 보호."""
+    payload = {"rdoc_job_id": "j1", "status": "completed", "error": None, "content": "doc", "extra": "x"}
+    # rdoc_job_id·status를 rename 시도 + keep_unmapped=False로 error·extra drop 유도
+    fm = json.dumps({"rdoc_job_id": "id", "status": "state", "content": "text"})
+    out = _apply_field_map(payload, fm, keep_unmapped=False)
+    # reserved 3종은 원본 키로 보존돼야 함
+    assert out["rdoc_job_id"] == "j1"
+    assert out["status"] == "completed"
+    assert "error" in out
+    # non-reserved는 계약대로 동작 (content→text rename, extra는 drop)
+    assert out["text"] == "doc"
+    assert "extra" not in out
 
 
 @pytest.mark.asyncio

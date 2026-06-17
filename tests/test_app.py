@@ -74,6 +74,33 @@ async def test_post_jobs_dedup_same_hash(app_client):
 
 
 @pytest.mark.asyncio
+async def test_cache_hit_fires_callback(app_client):
+    """cache hit이 terminal job이면 callback_url로 콜백 발사 → 제출자 영구 processing 방지 (D10)."""
+    from processor import compute_source_hash
+    client, store, ps = app_client
+    await ps.seed_if_empty("plsql", "프롬프트 v1")
+    content = b"PROCEDURE PROC_CACHED IS BEGIN NULL; END;"
+    h = compute_source_hash(content, "1")
+    job = await store.create(asset_type="plsql", file_name="cached.sql", source_hash=h)
+    await store.save_result(job.id, "# 캐시된 역문서")
+
+    with patch("app.send_callback", new_callable=AsyncMock) as mock_cb:
+        async with client:
+            resp = await client.post(
+                "/jobs",
+                data={"asset_type": "plsql", "callback_url": "http://router/callback/robotics"},
+                files={"file": ("cached.sql", content, "text/plain")},
+            )
+    assert resp.status_code == 202
+    assert resp.json()["cached"] is True
+    mock_cb.assert_called_once()
+    kwargs = mock_cb.call_args.kwargs
+    assert kwargs["url"] == "http://router/callback/robotics"
+    assert kwargs["payload"]["rdoc_job_id"] == job.id
+    assert kwargs["payload"]["status"] == "completed"
+
+
+@pytest.mark.asyncio
 async def test_get_job_not_found(app_client):
     client, store, ps = app_client
     async with client:

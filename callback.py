@@ -12,8 +12,13 @@ RETRIES = 3
 DELAYS = [1, 2, 4]
 
 
+# 콜백 라우팅·상태·진단 키 — field_map이 rename/drop 못하게 보호 (오설정으로 콜백 전량 붕괴 방지)
+_RESERVED_KEYS = frozenset({"rdoc_job_id", "status", "error"})
+
+
 def _apply_field_map(payload: dict, field_map_json: str, keep_unmapped: bool) -> dict:
-    """Forge CALLBACK_FIELD_MAP과 동일 로직: 필드명 rename + 불필요 필드 제거."""
+    """Forge CALLBACK_FIELD_MAP과 동일 로직: 필드명 rename + 불필요 필드 제거.
+    단 _RESERVED_KEYS는 어떤 field_map 설정에도 원본 키로 무조건 보존."""
     if not field_map_json:
         return payload
     try:
@@ -23,6 +28,9 @@ def _apply_field_map(payload: dict, field_map_json: str, keep_unmapped: bool) ->
         return payload
     result: dict = {}
     for k, v in payload.items():
+        if k in _RESERVED_KEYS:
+            result[k] = v  # rename/drop 무시, 원본 키 보존
+            continue
         new_key = rename_map.get(k, k)
         if not keep_unmapped and k not in rename_map:
             continue
