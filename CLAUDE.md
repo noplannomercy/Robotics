@@ -39,6 +39,8 @@ Oracle PL/SQL + 딕셔너리 + 정책 문서를 v2 canonical 식별자 markdown�
 - 프롬프트 DB 업데이트는 `PUT /admin/prompts/{asset_type}` — `seed_if_empty`는 최초 시드 전용, 기존 레코드 덮어쓰지 않음
 - `/health` DB 판단은 `isinstance(store, PostgresJobStore)` 사용 — `_state["pool"]`은 lifespan 실패 시 None으로 남아 신뢰 불가 (Group C 실증)
 - `admin.py` 내 `_safe_process`는 함수 내부 `from worker import` 방식 — 테스트 패치 시 `worker._safe_process` 대상으로 (Group B 실증)
+- 콜백 `field_map`은 `rdoc_job_id`/`status`/`error` 3종을 보호 — rename/drop 불가 (`callback.py:_RESERVED_KEYS`). 오설정 시 Pylon 콜백 라우팅 전량 붕괴 방지 (3시스템 통합 적대분석 triage, 2026-06-17)
+- `/jobs` cache hit이 terminal(completed/failed) job이면 `callback_url`로 콜백 재발사 — 캐시 적중 제출자(Pylon)가 영구 `processing`에 고착되는 것 방지 (통합 적대분석 D10, 2026-06-17)
 
 ## 스택
 
